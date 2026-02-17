@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/auth"
-	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/ofoxai/picoclaw/pkg/auth"
+	"github.com/ofoxai/picoclaw/pkg/config"
 )
 
 type HTTPProvider struct {

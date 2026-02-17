@@ -8,10 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/skills"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/ofoxai/picoclaw/pkg/logger"
+	"github.com/ofoxai/picoclaw/pkg/providers"
+	"github.com/ofoxai/picoclaw/pkg/skills"
+	"github.com/ofoxai/picoclaw/pkg/tools"
 )
 
 type ContextBuilder struct {

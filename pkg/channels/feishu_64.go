@@ -14,10 +14,10 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/ofoxai/picoclaw/pkg/bus"
+	"github.com/ofoxai/picoclaw/pkg/config"
+	"github.com/ofoxai/picoclaw/pkg/logger"
+	"github.com/ofoxai/picoclaw/pkg/utils"
 )
 
 type FeishuChannel struct {

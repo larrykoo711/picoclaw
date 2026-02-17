@@ -18,16 +18,16 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/channels"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/constants"
-	"github.com/sipeed/picoclaw/pkg/logger"
-	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/session"
-	"github.com/sipeed/picoclaw/pkg/state"
-	"github.com/sipeed/picoclaw/pkg/tools"
-	"github.com/sipeed/picoclaw/pkg/utils"
+	"github.com/ofoxai/picoclaw/pkg/bus"
+	"github.com/ofoxai/picoclaw/pkg/channels"
+	"github.com/ofoxai/picoclaw/pkg/config"
+	"github.com/ofoxai/picoclaw/pkg/constants"
+	"github.com/ofoxai/picoclaw/pkg/logger"
+	"github.com/ofoxai/picoclaw/pkg/providers"
+	"github.com/ofoxai/picoclaw/pkg/session"
+	"github.com/ofoxai/picoclaw/pkg/state"
+	"github.com/ofoxai/picoclaw/pkg/tools"
+	"github.com/ofoxai/picoclaw/pkg/utils"
 )
 
 type AgentLoop struct {

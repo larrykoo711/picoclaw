@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/sipeed/picoclaw/pkg/bus"
-	"github.com/sipeed/picoclaw/pkg/config"
-	"github.com/sipeed/picoclaw/pkg/providers"
-	"github.com/sipeed/picoclaw/pkg/tools"
+	"github.com/ofoxai/picoclaw/pkg/bus"
+	"github.com/ofoxai/picoclaw/pkg/config"
+	"github.com/ofoxai/picoclaw/pkg/providers"
+	"github.com/ofoxai/picoclaw/pkg/tools"
 )
 
 // mockProvider is a simple mock LLM provider for testing
