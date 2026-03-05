@@ -19,6 +19,8 @@ type (
 	GoogleExtra            = protocoltypes.GoogleExtra
 	ContentBlock           = protocoltypes.ContentBlock
 	CacheControl           = protocoltypes.CacheControl
+	StreamEvent            = protocoltypes.StreamEvent
+	ToolCallDelta          = protocoltypes.ToolCallDelta
 )
 
 type LLMProvider interface {
@@ -35,6 +37,28 @@ type LLMProvider interface {
 type StatefulProvider interface {
 	LLMProvider
 	Close()
+}
+
+// StreamingProvider is an optional interface for providers that support streaming responses.
+// Providers implement this via Go interface assertion: if sp, ok := provider.(StreamingProvider); ok { ... }
+type StreamingProvider interface {
+	ChatStream(
+		ctx context.Context,
+		messages []Message,
+		tools []ToolDefinition,
+		model string,
+		options map[string]any,
+	) (<-chan StreamEvent, error)
+}
+
+// TokenCounterProvider is an optional interface for providers that support server-side token counting.
+type TokenCounterProvider interface {
+	CountTokens(
+		ctx context.Context,
+		messages []Message,
+		tools []ToolDefinition,
+		model string,
+	) (int, error)
 }
 
 // ThinkingCapable is an optional interface for providers that support

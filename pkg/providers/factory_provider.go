@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/config"
+	"github.com/sipeed/picoclaw/pkg/providers/openai_compat"
 )
 
 // createClaudeAuthProvider creates a Claude provider using OAuth credentials from auth store.
@@ -66,6 +67,12 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	protocol, modelID := ExtractProtocol(cfg.Model)
 
+	// Build extra options for OpenAI-compatible providers
+	var extraOpts []openai_compat.Option
+	if cfg.PassthroughModel {
+		extraOpts = append(extraOpts, openai_compat.WithPassthroughModel())
+	}
+
 	switch protocol {
 	case "openai":
 		// OpenAI with OAuth/token auth (Codex-style)
@@ -90,6 +97,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.Proxy,
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
+			extraOpts...,
 		), modelID, nil
 
 	case "litellm", "openrouter", "groq", "zhipu", "gemini", "nvidia",
@@ -109,6 +117,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.Proxy,
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
+			extraOpts...,
 		), modelID, nil
 
 	case "anthropic":
@@ -134,6 +143,7 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			cfg.Proxy,
 			cfg.MaxTokensField,
 			cfg.RequestTimeout,
+			extraOpts...,
 		), modelID, nil
 
 	case "antigravity":

@@ -29,10 +29,11 @@ type (
 )
 
 type Provider struct {
-	apiKey         string
-	apiBase        string
-	maxTokensField string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
-	httpClient     *http.Client
+	apiKey           string
+	apiBase          string
+	maxTokensField   string // Field name for max tokens (e.g., "max_completion_tokens" for o1/glm models)
+	passthroughModel bool   // Skip model name normalization (for gateway proxies)
+	httpClient       *http.Client
 }
 
 type Option func(*Provider)
@@ -50,6 +51,12 @@ func WithRequestTimeout(timeout time.Duration) Option {
 		if timeout > 0 {
 			p.httpClient.Timeout = timeout
 		}
+	}
+}
+
+func WithPassthroughModel() Option {
+	return func(p *Provider) {
+		p.passthroughModel = true
 	}
 }
 
@@ -112,7 +119,9 @@ func (p *Provider) Chat(
 		return nil, fmt.Errorf("API base not configured")
 	}
 
-	model = normalizeModel(model, p.apiBase)
+	if !p.passthroughModel {
+		model = normalizeModel(model, p.apiBase)
+	}
 
 	requestBody := map[string]any{
 		"model":    model,

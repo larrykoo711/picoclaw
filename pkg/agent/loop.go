@@ -17,7 +17,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -1417,16 +1416,10 @@ func (al *AgentLoop) summarizeBatch(
 	return response.Content, nil
 }
 
-// estimateTokens estimates the number of tokens in a message list.
-// Uses a safe heuristic of 2.5 characters per token to account for CJK and other
-// overheads better than the previous 3 chars/token.
+// estimateTokens estimates the total token count for a message history,
+// using CJK-aware heuristics from halclaw_tokens.go.
 func (al *AgentLoop) estimateTokens(messages []providers.Message) int {
-	totalChars := 0
-	for _, m := range messages {
-		totalChars += utf8.RuneCountInString(m.Content)
-	}
-	// 2.5 chars per token = totalChars * 2 / 5
-	return totalChars * 2 / 5
+	return estimateMessagesTokens(messages)
 }
 
 func (al *AgentLoop) handleCommand(ctx context.Context, msg bus.InboundMessage) (string, bool) {

@@ -420,6 +420,47 @@ func TestProvider_FunctionalOptionRequestTimeoutNonPositive(t *testing.T) {
 	}
 }
 
+func TestProvider_PassthroughModel(t *testing.T) {
+	p := NewProvider("key", "https://gateway.example.com/v1", "", WithPassthroughModel())
+	if !p.passthroughModel {
+		t.Fatal("passthroughModel should be true")
+	}
+}
+
+func TestNormalizeModel_SkippedWithPassthrough(t *testing.T) {
+	// Without passthrough: deepseek prefix is stripped
+	if got := normalizeModel("deepseek/deepseek-chat", "https://gateway.example.com/v1"); got != "deepseek-chat" {
+		t.Fatalf("normalizeModel without passthrough = %q, want %q", got, "deepseek-chat")
+	}
+
+	// With passthrough: model is preserved as-is in Chat()
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if model, _ := body["model"].(string); model != "deepseek/deepseek-chat" {
+			t.Errorf("request model = %q, want %q", model, "deepseek/deepseek-chat")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"choices": []map[string]any{
+				{"message": map[string]any{"content": "ok"}, "finish_reason": "stop"},
+			},
+		})
+	}))
+	defer ts.Close()
+
+	p := NewProvider("key", ts.URL, "", WithPassthroughModel())
+	resp, err := p.Chat(t.Context(), []Message{{Role: "user", Content: "hi"}}, nil, "deepseek/deepseek-chat", nil)
+	if err != nil {
+		t.Fatalf("Chat() error = %v", err)
+	}
+	if resp.Content != "ok" {
+		t.Fatalf("response content = %q, want %q", resp.Content, "ok")
+	}
+}
+
 func TestSerializeMessages_PlainText(t *testing.T) {
 	messages := []protocoltypes.Message{
 		{Role: "user", Content: "hello"},

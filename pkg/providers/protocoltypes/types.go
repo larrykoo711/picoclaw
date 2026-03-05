@@ -82,3 +82,22 @@ type ToolFunctionDefinition struct {
 	Description string         `json:"description"`
 	Parameters  map[string]any `json:"parameters"`
 }
+
+// StreamEvent represents a single event from a streaming LLM response.
+type StreamEvent struct {
+	Type             string // "content", "tool_call", "reasoning", "done", "error"
+	Content          string // text delta for "content" type
+	ReasoningContent string // reasoning delta for "reasoning" type
+	ToolCallDelta    *ToolCallDelta
+	FinishReason     string
+	Usage            *UsageInfo
+	Error            error
+}
+
+// ToolCallDelta represents an incremental update to a tool call during streaming.
+type ToolCallDelta struct {
+	Index     int
+	ID        string
+	Name      string
+	Arguments string // JSON fragment to accumulate
+}
