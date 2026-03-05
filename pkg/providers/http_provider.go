@@ -55,3 +55,14 @@ func (p *HTTPProvider) Chat(
 func (p *HTTPProvider) GetDefaultModel() string {
 	return ""
 }
+
+// ChatStream forwards streaming to the delegate provider.
+func (p *HTTPProvider) ChatStream(
+	ctx context.Context,
+	messages []Message,
+	tools []ToolDefinition,
+	model string,
+	options map[string]any,
+) (<-chan StreamEvent, error) {
+	return p.delegate.ChatStream(ctx, messages, tools, model, options)
+}

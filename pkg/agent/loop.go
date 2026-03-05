@@ -879,7 +879,15 @@ func (al *AgentLoop) runLLMIteration(
 					ctx,
 					agent.Candidates,
 					func(ctx context.Context, provider, model string) (*providers.LLMResponse, error) {
-						return agent.Provider.Chat(ctx, messages, providerToolDefs, model, llmOpts)
+						return streamLLMCall(
+							ctx,
+							agent.Provider,
+							messages,
+							providerToolDefs,
+							model,
+							llmOpts,
+							al.streamCallback(ctx, opts),
+						)
 					},
 				)
 				if fbErr != nil {
@@ -895,7 +903,7 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, agent.Model, llmOpts)
+			return streamLLMCall(ctx, agent.Provider, messages, providerToolDefs, agent.Model, llmOpts, al.streamCallback(ctx, opts))
 		}
 
 		// Retry loop for context/token errors
