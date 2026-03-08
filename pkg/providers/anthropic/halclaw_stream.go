@@ -58,6 +58,10 @@ func (p *Provider) ChatStream(
 			case "content_block_start":
 				block := event.ContentBlock
 				switch block.Type {
+				case "thinking":
+					emit(ch, ctx, protocoltypes.StreamEvent{
+						Type: "thinking_start",
+					})
 				case "tool_use":
 					emit(ch, ctx, protocoltypes.StreamEvent{
 						Type: "tool_call",

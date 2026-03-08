@@ -18,9 +18,10 @@ import (
 )
 
 type ContextBuilder struct {
-	workspace    string
-	skillsLoader *skills.SkillsLoader
-	memory       *MemoryStore
+	workspace      string
+	skillsLoader   *skills.SkillsLoader
+	memory         *MemoryStore
+	disabledSkills map[string]struct{}
 
 	// Cache for system prompt to avoid rebuilding on every call.
 	// This fixes issue #607: repeated reprocessing of the entire context.
@@ -107,7 +108,7 @@ func (cb *ContextBuilder) BuildSystemPrompt() string {
 	}
 
 	// Skills - show summary, AI can read full content with read_file tool
-	skillsSummary := cb.skillsLoader.BuildSkillsSummary()
+	skillsSummary := cb.skillsLoader.BuildSkillsSummaryFiltered(cb.disabledSkills)
 	if skillsSummary != "" {
 		parts = append(parts, fmt.Sprintf(`# Skills
 
@@ -685,6 +686,19 @@ func (cb *ContextBuilder) AddAssistantMessage(
 	// Always add assistant message, whether or not it has tool calls
 	messages = append(messages, msg)
 	return messages
+}
+
+// SetDisabledSkills updates the set of skill names excluded from the system prompt.
+// Invalidates the cached system prompt so the next build picks up the change.
+func (cb *ContextBuilder) SetDisabledSkills(names []string) {
+	m := make(map[string]struct{}, len(names))
+	for _, n := range names {
+		m[n] = struct{}{}
+	}
+	cb.systemPromptMutex.Lock()
+	cb.disabledSkills = m
+	cb.cachedSystemPrompt = "" // force rebuild
+	cb.systemPromptMutex.Unlock()
 }
 
 // GetSkillsInfo returns information about loaded skills.

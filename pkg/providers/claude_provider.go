@@ -51,6 +51,16 @@ func (p *ClaudeProvider) Chat(
 	return resp, nil
 }
 
+// ChatStream implements StreamingProvider for ClaudeProvider.
+func (p *ClaudeProvider) ChatStream(
+	ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any,
+) (<-chan StreamEvent, error) {
+	return p.delegate.ChatStream(ctx, messages, tools, model, options)
+}
+
+// SupportsThinking implements ThinkingCapable for ClaudeProvider.
+func (p *ClaudeProvider) SupportsThinking() bool { return true }
+
 func (p *ClaudeProvider) GetDefaultModel() string {
 	return p.delegate.GetDefaultModel()
 }

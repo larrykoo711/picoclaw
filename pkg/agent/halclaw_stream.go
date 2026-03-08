@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 
 	"github.com/sipeed/picoclaw/pkg/providers"
@@ -108,12 +109,17 @@ func accumulateStream(
 		return nil, fmt.Errorf("stream error: %w", lastErr)
 	}
 
-	// Convert accumulated tool calls
-	for i := 0; i < len(toolCallMap); i++ {
-		acc, ok := toolCallMap[i]
-		if !ok {
-			continue
-		}
+	// Convert accumulated tool calls.
+	// Iterate by actual keys because Anthropic content block indices may not
+	// start at 0 (e.g. text=0, tool_use=1 → toolCallMap only has key 1).
+	// Collect and sort indices to preserve order.
+	indices := make([]int, 0, len(toolCallMap))
+	for idx := range toolCallMap {
+		indices = append(indices, idx)
+	}
+	sort.Ints(indices)
+	for _, idx := range indices {
+		acc := toolCallMap[idx]
 		args := make(map[string]any)
 		argsStr := acc.Arguments.String()
 		if argsStr != "" {
@@ -149,12 +155,44 @@ type toolCallAccumulator struct {
 	Arguments strings.Builder
 }
 
+// emitToolEvent sends a tool_start or tool_end StreamChatEvent to the registered callback.
+func (al *AgentLoop) emitToolEvent(sessionKey, eventType, toolName string) {
+	cb, ok := al.streamCallbacks.Load(sessionKey)
+	if !ok {
+		cb, ok = al.streamCallbacks.Load("*")
+		if !ok {
+			return
+		}
+	}
+	cb.(func(StreamChatEvent))(StreamChatEvent{
+		Type: eventType,
+		Tool: toolName,
+	})
+}
+
 // streamCallback returns a StreamCallback for the current agent loop iteration.
-// Currently a no-op placeholder — the desktop client will hook into this via
-// the message bus in a future stage.
+// If a per-session StreamChatEvent callback is registered (via ProcessDirectStream),
+// it converts low-level StreamEvents into high-level StreamChatEvents and forwards them.
 func (al *AgentLoop) streamCallback(ctx context.Context, opts processOptions) StreamCallback {
 	return func(event providers.StreamEvent) {
-		// Future: publish streaming events to bus for desktop UI consumption
-		// e.g. al.bus.PublishStreamEvent(ctx, opts.SessionKey, event)
+		cb, ok := al.streamCallbacks.Load(opts.SessionKey)
+		if !ok {
+			// Fallback: ProcessDirectStream registers under "*" because
+			// the routed SessionKey may differ from the caller's key.
+			cb, ok = al.streamCallbacks.Load("*")
+			if !ok {
+				return
+			}
+		}
+		chatEvent := mapStreamEvent(event)
+		// Skip "done" and "error" events from individual LLM calls.
+		// - "done": ProcessDirectStream emits its own after the full agent loop.
+		// - "error": intermediate errors (e.g. one LLM iteration failing) must not
+		//   reach the frontend, which would prematurely set "limit" status and
+		//   delete sessionMeta, causing all subsequent tokens to be silently dropped.
+		//   ProcessDirectStream handles the final error at the top level.
+		if chatEvent != nil && chatEvent.Type != "done" && chatEvent.Type != "error" {
+			cb.(func(StreamChatEvent))(*chatEvent)
+		}
 	}
 }

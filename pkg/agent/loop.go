@@ -28,6 +28,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/media"
 	"github.com/sipeed/picoclaw/pkg/providers"
 	"github.com/sipeed/picoclaw/pkg/routing"
+	"github.com/sipeed/picoclaw/pkg/session"
 	"github.com/sipeed/picoclaw/pkg/skills"
 	"github.com/sipeed/picoclaw/pkg/state"
 	"github.com/sipeed/picoclaw/pkg/tools"
@@ -47,6 +48,15 @@ type AgentLoop struct {
 	mediaStore     media.MediaStore
 	transcriber    voice.Transcriber
 	cmdRegistry    *commands.Registry
+
+	// HalClaw desktop integration fields
+	identityName   string
+	identityEmoji  string
+	memoryStatusCb func(sessionKey, status string)
+	disabledSkills []string
+	streamCallbacks sync.Map // sessionKey → func(StreamChatEvent)
+	sessionMgrOnce  sync.Once
+	sessionMgr      *session.SessionManager
 }
 
 // processOptions configures how a message is processed
@@ -964,7 +974,18 @@ func (al *AgentLoop) runLLMIteration(
 				}
 				return fbResult.Response, nil
 			}
-			return agent.Provider.Chat(ctx, messages, providerToolDefs, activeModel, llmOpts)
+			// Single candidate: still use streamLLMCall for streaming support.
+			// Non-streaming Chat() fails when extended thinking is enabled
+			// (Anthropic API requires streaming for thinking operations).
+			return streamLLMCall(
+				ctx,
+				agent.Provider,
+				messages,
+				providerToolDefs,
+				activeModel,
+				llmOpts,
+				al.streamCallback(ctx, opts),
+			)
 		}
 
 		// Retry loop for context/token errors
@@ -1151,6 +1172,9 @@ func (al *AgentLoop) runLLMIteration(
 						"iteration": iteration,
 					})
 
+				// Emit tool_start event for streaming UI
+				al.emitToolEvent(opts.SessionKey, "tool_start", tc.Name)
+
 				// Create async callback for tools that implement AsyncExecutor
 				asyncCallback := func(callbackCtx context.Context, result *tools.ToolResult) {
 					if !result.Silent && result.ForUser != "" {
@@ -1171,6 +1195,9 @@ func (al *AgentLoop) runLLMIteration(
 					asyncCallback,
 				)
 				agentResults[idx].result = toolResult
+
+				// Emit tool_end event for streaming UI
+				al.emitToolEvent(opts.SessionKey, "tool_end", tc.Name)
 			}(i, tc)
 		}
 		wg.Wait()

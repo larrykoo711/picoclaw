@@ -17,6 +17,7 @@ var (
 	namePattern        = regexp.MustCompile(`^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*$`)
 	reFrontmatter      = regexp.MustCompile(`(?s)^---(?:\r\n|\n|\r)(.*?)(?:\r\n|\n|\r)---`)
 	reStripFrontmatter = regexp.MustCompile(`(?s)^---(?:\r\n|\n|\r)(.*?)(?:\r\n|\n|\r)---(?:\r\n|\n|\r)*`)
+	reTrailingComma    = regexp.MustCompile(`,\s*([}\]])`)
 )
 
 const (
@@ -25,15 +26,23 @@ const (
 )
 
 type SkillMetadata struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name        string          `json:"name"`
+	Description string          `json:"description"`
+	Homepage    string          `json:"homepage,omitempty"`
+	Emoji       string          `json:"emoji,omitempty"`
+	Requires    *SkillRequires  `json:"requires,omitempty"`
+	Install     []InstallAction `json:"install,omitempty"`
 }
 
 type SkillInfo struct {
-	Name        string `json:"name"`
-	Path        string `json:"path"`
-	Source      string `json:"source"`
-	Description string `json:"description"`
+	Name        string          `json:"name"`
+	Path        string          `json:"path"`
+	Source      string          `json:"source"`
+	Description string          `json:"description"`
+	Homepage    string          `json:"homepage,omitempty"`
+	Emoji       string          `json:"emoji,omitempty"`
+	Requires    *SkillRequires  `json:"requires,omitempty"`
+	Install     []InstallAction `json:"install,omitempty"`
 }
 
 func (info SkillInfo) validate() error {
@@ -123,8 +132,12 @@ func (sl *SkillsLoader) ListSkills() []SkillInfo {
 			}
 			metadata := sl.getSkillMetadata(skillFile)
 			if metadata != nil {
-				info.Description = metadata.Description
 				info.Name = metadata.Name
+				info.Description = metadata.Description
+				info.Homepage = metadata.Homepage
+				info.Emoji = metadata.Emoji
+				info.Requires = metadata.Requires
+				info.Install = metadata.Install
 			}
 			if err := info.validate(); err != nil {
 				slog.Warn("invalid skill from "+source, "name", info.Name, "error", err)
@@ -191,6 +204,12 @@ func (sl *SkillsLoader) LoadSkillsForContext(skillNames []string) string {
 }
 
 func (sl *SkillsLoader) BuildSkillsSummary() string {
+	return sl.BuildSkillsSummaryFiltered(nil)
+}
+
+// BuildSkillsSummaryFiltered returns the XML skills summary, excluding
+// any skill whose name appears in the exclude set.
+func (sl *SkillsLoader) BuildSkillsSummaryFiltered(exclude map[string]struct{}) string {
 	allSkills := sl.ListSkills()
 	if len(allSkills) == 0 {
 		return ""
@@ -199,11 +218,14 @@ func (sl *SkillsLoader) BuildSkillsSummary() string {
 	var lines []string
 	lines = append(lines, "<skills>")
 	for _, s := range allSkills {
+		if _, skip := exclude[s.Name]; skip {
+			continue
+		}
 		escapedName := escapeXML(s.Name)
 		escapedDesc := escapeXML(s.Description)
 		escapedPath := escapeXML(s.Path)
 
-		lines = append(lines, fmt.Sprintf("  <skill>"))
+		lines = append(lines, "  <skill>")
 		lines = append(lines, fmt.Sprintf("    <name>%s</name>", escapedName))
 		lines = append(lines, fmt.Sprintf("    <description>%s</description>", escapedDesc))
 		lines = append(lines, fmt.Sprintf("    <location>%s</location>", escapedPath))
@@ -211,6 +233,11 @@ func (sl *SkillsLoader) BuildSkillsSummary() string {
 		lines = append(lines, "  </skill>")
 	}
 	lines = append(lines, "</skills>")
+
+	// If all skills were excluded, return empty.
+	if len(lines) == 2 {
+		return ""
+	}
 
 	return strings.Join(lines, "\n")
 }
@@ -233,23 +260,69 @@ func (sl *SkillsLoader) getSkillMetadata(skillPath string) *SkillMetadata {
 		}
 	}
 
-	// Try JSON first (for backward compatibility)
-	var jsonMeta struct {
-		Name        string `json:"name"`
-		Description string `json:"description"`
-	}
+	// Try JSON first — supports all fields including requires/install.
+	var jsonMeta SkillMetadata
 	if err := json.Unmarshal([]byte(frontmatter), &jsonMeta); err == nil {
-		return &SkillMetadata{
-			Name:        jsonMeta.Name,
-			Description: jsonMeta.Description,
-		}
+		return &jsonMeta
 	}
 
-	// Fall back to simple YAML parsing
+	// Fall back to simple YAML parsing for top-level fields,
+	// then extract nested metadata.openclaw for emoji/requires/install.
 	yamlMeta := sl.parseSimpleYAML(frontmatter)
-	return &SkillMetadata{
+	meta := &SkillMetadata{
 		Name:        yamlMeta["name"],
 		Description: yamlMeta["description"],
+		Homepage:    yamlMeta["homepage"],
+		Emoji:       yamlMeta["emoji"],
+	}
+	sl.mergeOpenClawMetadata(frontmatter, meta)
+	return meta
+}
+
+// mergeOpenClawMetadata extracts the "metadata: { "openclaw": { ... } }" block
+// from YAML frontmatter and merges emoji/requires/install into meta.
+// Handles trailing commas in the JSON block (common in SKILL.md files).
+func (sl *SkillsLoader) mergeOpenClawMetadata(frontmatter string, meta *SkillMetadata) {
+	idx := strings.Index(frontmatter, "metadata:")
+	if idx < 0 {
+		return
+	}
+
+	rest := strings.TrimSpace(frontmatter[idx+len("metadata:"):])
+	if rest == "" || rest[0] != '{' {
+		return
+	}
+
+	// Strip trailing commas (,} → }, ,] → ]) to produce valid JSON.
+	cleaned := reTrailingComma.ReplaceAllString(rest, "$1")
+
+	var wrapper map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(cleaned), &wrapper); err != nil {
+		return
+	}
+
+	oc, ok := wrapper["openclaw"]
+	if !ok {
+		return
+	}
+
+	var ocData struct {
+		Emoji    string          `json:"emoji"`
+		Requires *SkillRequires  `json:"requires"`
+		Install  []InstallAction `json:"install"`
+	}
+	if err := json.Unmarshal(oc, &ocData); err != nil {
+		return
+	}
+
+	if ocData.Emoji != "" {
+		meta.Emoji = ocData.Emoji
+	}
+	if ocData.Requires != nil {
+		meta.Requires = ocData.Requires
+	}
+	if ocData.Install != nil {
+		meta.Install = ocData.Install
 	}
 }
 

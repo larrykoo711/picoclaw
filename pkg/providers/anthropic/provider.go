@@ -180,16 +180,9 @@ func buildParams(
 					blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
 				}
 				for _, tc := range msg.ToolCalls {
-					args := tc.Arguments
-					if args == nil && tc.Function != nil && tc.Function.Arguments != "" {
-						if err := json.Unmarshal([]byte(tc.Function.Arguments), &args); err != nil {
-							args = map[string]any{}
-						}
-					}
-					if args == nil {
-						args = map[string]any{}
-					}
-					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, args, tc.Name))
+					input := resolveToolInput(tc)
+					name := resolveToolName(tc)
+					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, input, name))
 				}
 				anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(blocks...))
 			} else {
@@ -270,13 +263,12 @@ func applyThinkingConfig(params *anthropic.MessageNewParams, level string) {
 		return
 	}
 
-	// budget_tokens must be < max_tokens; clamp to respect user's max_tokens setting.
-	if budget >= params.MaxTokens {
-		log.Printf("anthropic: budget_tokens (%d) clamped to %d (max_tokens-1)", budget, params.MaxTokens-1)
-		budget = params.MaxTokens - 1
-	} else if budget > params.MaxTokens*80/100 {
-		log.Printf("anthropic: thinking budget (%d) exceeds 80%% of max_tokens (%d), output may be truncated",
-			budget, params.MaxTokens)
+	// budget_tokens must be < max_tokens, with enough room for output (text + tool calls).
+	// Strategy: shrink budget to fit within max_tokens, reserving at least 40% for output.
+	maxBudget := params.MaxTokens * 60 / 100
+	if budget > maxBudget {
+		log.Printf("anthropic: budget_tokens scaled from %d to %d (60%% of max_tokens=%d)", budget, maxBudget, params.MaxTokens)
+		budget = maxBudget
 	}
 	params.Thinking = anthropic.ThinkingConfigParamOfEnabled(budget)
 }
@@ -380,6 +372,36 @@ func parseResponse(resp *anthropic.Message) *LLMResponse {
 			TotalTokens:      int(resp.Usage.InputTokens + resp.Usage.OutputTokens),
 		},
 	}
+}
+
+// resolveToolInput extracts tool call arguments as a map suitable for the
+// Anthropic API. The agent loop stores arguments in Function.Arguments (JSON
+// string, OpenAI format) while the streaming accumulator stores them in
+// ToolCall.Arguments (map). This function handles both paths.
+// resolveToolName returns the tool call name, falling back to Function.Name
+// when ToolCall.Name is empty (it has json:"-" and is not serialized).
+func resolveToolName(tc ToolCall) string {
+	if tc.Name != "" {
+		return tc.Name
+	}
+	if tc.Function != nil {
+		return tc.Function.Name
+	}
+	return ""
+}
+
+func resolveToolInput(tc ToolCall) any {
+	if len(tc.Arguments) > 0 {
+		return tc.Arguments
+	}
+	if tc.Function != nil && tc.Function.Arguments != "" {
+		var parsed map[string]any
+		if err := json.Unmarshal([]byte(tc.Function.Arguments), &parsed); err == nil {
+			return parsed
+		}
+	}
+	// Return empty object rather than nil to avoid API 400 error.
+	return map[string]any{}
 }
 
 func normalizeBaseURL(apiBase string) string {

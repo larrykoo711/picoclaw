@@ -129,22 +129,12 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			}
 			return provider, modelID, nil
 		}
-		// Use API key with HTTP API
-		apiBase := cfg.APIBase
-		if apiBase == "" {
-			apiBase = "https://api.anthropic.com/v1"
-		}
+		// Use Anthropic Messages API (/v1/messages)
 		if cfg.APIKey == "" {
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
-		return NewHTTPProviderWithMaxTokensFieldAndRequestTimeout(
-			cfg.APIKey,
-			apiBase,
-			cfg.Proxy,
-			cfg.MaxTokensField,
-			cfg.RequestTimeout,
-			extraOpts...,
-		), modelID, nil
+		apiBase := cfg.APIBase // e.g. "https://api.ofox.ai/anthropic"
+		return NewClaudeProviderWithBaseURL(cfg.APIKey, apiBase), modelID, nil
 
 	case "antigravity":
 		return NewAntigravityProvider(), modelID, nil
