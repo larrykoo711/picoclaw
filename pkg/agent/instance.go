@@ -45,6 +45,10 @@ type AgentInstance struct {
 	// LightCandidates holds the resolved provider candidates for the light model.
 	// Pre-computed at agent creation to avoid repeated model_list lookups at runtime.
 	LightCandidates []providers.FallbackCandidate
+	// LightThinkingLevel is the thinking level resolved from model_list for the
+	// light model. Defaults to ThinkingOff when the light model has no
+	// thinking_level configured, ensuring no thinking params leak to it.
+	LightThinkingLevel ThinkingLevel
 }
 
 // NewAgentInstance creates an agent instance from config.
@@ -192,6 +196,7 @@ func NewAgentInstance(
 	// to avoid repeated model_list lookups on every incoming message.
 	var router *routing.Router
 	var lightCandidates []providers.FallbackCandidate
+	var lightThinkingLevel ThinkingLevel
 	if rc := defaults.Routing; rc != nil && rc.Enabled && rc.LightModel != "" {
 		lightModelCfg := providers.ModelConfig{Primary: rc.LightModel}
 		resolved := providers.ResolveCandidatesWithLookup(lightModelCfg, defaults.Provider, resolveFromModelList)
@@ -201,6 +206,11 @@ func NewAgentInstance(
 				Threshold:  rc.Threshold,
 			})
 			lightCandidates = resolved
+			// Resolve light model thinking level from model_list config.
+			// Falls back to ThinkingOff when not configured.
+			if mc, err := cfg.GetModelConfig(rc.LightModel); err == nil {
+				lightThinkingLevel = parseThinkingLevel(mc.ThinkingLevel)
+			}
 		} else {
 			log.Printf("routing: light_model %q not found in model_list — routing disabled for agent %q",
 				rc.LightModel, agentID)
@@ -229,6 +239,7 @@ func NewAgentInstance(
 		Candidates:                candidates,
 		Router:                    router,
 		LightCandidates:           lightCandidates,
+		LightThinkingLevel:        lightThinkingLevel,
 	}
 }
 

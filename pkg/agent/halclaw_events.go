@@ -9,4 +9,10 @@ type StreamChatEvent struct {
 	Tool        string // tool name for tool_start/tool_end
 	InputTokens int    // final input token count for "done"
 	Code        string // error code for i18n ("rate_limit", "context_too_long", etc.)
+
+	// Rich tool call fields — populated for tool_start and tool_end events.
+	ToolCallID string         // unique ID correlating tool_start with tool_end
+	ToolArgs   map[string]any // tool input parameters (tool_start only)
+	ToolResult string         // tool output content, truncated (tool_end only)
+	ToolDuration int64        // execution time in milliseconds (tool_end only)
 }

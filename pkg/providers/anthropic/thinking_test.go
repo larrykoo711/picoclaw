@@ -67,15 +67,17 @@ func TestApplyThinkingConfig_BudgetLevels(t *testing.T) {
 }
 
 func TestApplyThinkingConfig_BudgetClamp(t *testing.T) {
-	// budget_tokens must be < max_tokens; clamp budget down to respect user's max_tokens.
+	// budget_tokens must be < max_tokens; clamp budget to 60% of max_tokens,
+	// reserving at least 40% for output (text + tool calls).
 	params := anthropic.MessageNewParams{MaxTokens: 4096}
 	applyThinkingConfig(&params, "high") // budget=32000 > maxTokens=4096
 
 	if params.Thinking.OfEnabled == nil {
 		t.Fatal("expected enabled thinking")
 	}
-	if params.Thinking.OfEnabled.BudgetTokens != 4095 {
-		t.Errorf("budget_tokens = %d, want 4095 (maxTokens-1)", params.Thinking.OfEnabled.BudgetTokens)
+	wantBudget := int64(4096 * 60 / 100) // 2457
+	if params.Thinking.OfEnabled.BudgetTokens != wantBudget {
+		t.Errorf("budget_tokens = %d, want %d (60%% of maxTokens)", params.Thinking.OfEnabled.BudgetTokens, wantBudget)
 	}
 	if params.MaxTokens != 4096 {
 		t.Errorf("max_tokens should not be modified, got %d", params.MaxTokens)

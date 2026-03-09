@@ -362,14 +362,14 @@ func TestRouter_LightModel(t *testing.T) {
 	}
 }
 
-// ── newWithClassifier (internal testing hook) ─────────────────────────────────
+// ── NewWithClassifier (internal testing hook) ─────────────────────────────────
 
 type fixedScoreClassifier struct{ score float64 }
 
 func (f *fixedScoreClassifier) Score(_ Features) float64 { return f.score }
 
 func TestRouter_CustomClassifier_LowScore_SelectsLight(t *testing.T) {
-	r := newWithClassifier(
+	r := NewWithClassifier(
 		RouterConfig{LightModel: "light", Threshold: 0.5},
 		&fixedScoreClassifier{score: 0.2},
 	)
@@ -380,7 +380,7 @@ func TestRouter_CustomClassifier_LowScore_SelectsLight(t *testing.T) {
 }
 
 func TestRouter_CustomClassifier_HighScore_SelectsPrimary(t *testing.T) {
-	r := newWithClassifier(
+	r := NewWithClassifier(
 		RouterConfig{LightModel: "light", Threshold: 0.5},
 		&fixedScoreClassifier{score: 0.8},
 	)
@@ -392,7 +392,7 @@ func TestRouter_CustomClassifier_HighScore_SelectsPrimary(t *testing.T) {
 
 func TestRouter_CustomClassifier_ExactThreshold_SelectsPrimary(t *testing.T) {
 	// score == threshold → primary (uses >= comparison)
-	r := newWithClassifier(
+	r := NewWithClassifier(
 		RouterConfig{LightModel: "light", Threshold: 0.5},
 		&fixedScoreClassifier{score: 0.5},
 	)
@@ -403,7 +403,7 @@ func TestRouter_CustomClassifier_ExactThreshold_SelectsPrimary(t *testing.T) {
 }
 
 func TestRouter_SelectModel_ReturnsScore(t *testing.T) {
-	r := newWithClassifier(
+	r := NewWithClassifier(
 		RouterConfig{LightModel: "light", Threshold: 0.5},
 		&fixedScoreClassifier{score: 0.42},
 	)

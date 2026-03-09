@@ -156,7 +156,7 @@ type toolCallAccumulator struct {
 }
 
 // emitToolEvent sends a tool_start or tool_end StreamChatEvent to the registered callback.
-func (al *AgentLoop) emitToolEvent(sessionKey, eventType, toolName string) {
+func (al *AgentLoop) emitToolEvent(sessionKey string, evt StreamChatEvent) {
 	cb, ok := al.streamCallbacks.Load(sessionKey)
 	if !ok {
 		cb, ok = al.streamCallbacks.Load("*")
@@ -164,10 +164,7 @@ func (al *AgentLoop) emitToolEvent(sessionKey, eventType, toolName string) {
 			return
 		}
 	}
-	cb.(func(StreamChatEvent))(StreamChatEvent{
-		Type: eventType,
-		Tool: toolName,
-	})
+	cb.(func(StreamChatEvent))(evt)
 }
 
 // streamCallback returns a StreamCallback for the current agent loop iteration.

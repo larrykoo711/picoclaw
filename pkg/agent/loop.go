@@ -887,7 +887,9 @@ func (al *AgentLoop) runLLMIteration(
 	// selectCandidates evaluates routing once and the decision is sticky for
 	// all tool-follow-up iterations within the same turn so that a multi-step
 	// tool chain doesn't switch models mid-way through.
-	activeCandidates, activeModel := al.selectCandidates(agent, opts.UserMessage, messages)
+	routed := al.selectCandidates(agent, opts.UserMessage, messages)
+	activeCandidates := routed.Candidates
+	activeModel := routed.Model
 
 	for iteration < agent.MaxIterations {
 		iteration++
@@ -932,14 +934,15 @@ func (al *AgentLoop) runLLMIteration(
 			"temperature":      agent.Temperature,
 			"prompt_cache_key": agent.ID,
 		}
-		// parseThinkingLevel guarantees ThinkingOff for empty/unknown values,
-		// so checking != ThinkingOff is sufficient.
-		if agent.ThinkingLevel != ThinkingOff {
+		// Use the routed model's ThinkingLevel (from model_list config), not the
+		// agent-level default. This ensures light models without thinking_level
+		// configured won't inherit the primary model's thinking params.
+		if routed.ThinkingLevel != ThinkingOff {
 			if tc, ok := agent.Provider.(providers.ThinkingCapable); ok && tc.SupportsThinking() {
-				llmOpts["thinking_level"] = string(agent.ThinkingLevel)
+				llmOpts["thinking_level"] = string(routed.ThinkingLevel)
 			} else {
 				logger.WarnCF("agent", "thinking_level is set but current provider does not support it, ignoring",
-					map[string]any{"agent_id": agent.ID, "thinking_level": string(agent.ThinkingLevel)})
+					map[string]any{"agent_id": agent.ID, "thinking_level": string(routed.ThinkingLevel)})
 			}
 		}
 
@@ -1174,8 +1177,14 @@ func (al *AgentLoop) runLLMIteration(
 						"iteration": iteration,
 					})
 
-				// Emit tool_start event for streaming UI
-				al.emitToolEvent(opts.SessionKey, "tool_start", tc.Name)
+				// Emit tool_start event with arguments for streaming UI
+				al.emitToolEvent(opts.SessionKey, StreamChatEvent{
+					Type:       "tool_start",
+					Tool:       tc.Name,
+					ToolCallID: tc.ID,
+					ToolArgs:   tc.Arguments,
+				})
+				toolStartTime := time.Now()
 
 				// Create async callback for tools that implement AsyncExecutor.
 				// When the background work completes, this publishes the result
@@ -1230,8 +1239,19 @@ func (al *AgentLoop) runLLMIteration(
 				)
 				agentResults[idx].result = toolResult
 
-				// Emit tool_end event for streaming UI
-				al.emitToolEvent(opts.SessionKey, "tool_end", tc.Name)
+				// Emit tool_end event with result and duration for streaming UI
+				toolDuration := time.Since(toolStartTime).Milliseconds()
+				resultPreview := toolResult.ForLLM
+				if len(resultPreview) > 500 {
+					resultPreview = resultPreview[:500]
+				}
+				al.emitToolEvent(opts.SessionKey, StreamChatEvent{
+					Type:         "tool_end",
+					Tool:         tc.Name,
+					ToolCallID:   tc.ID,
+					ToolResult:   resultPreview,
+					ToolDuration: toolDuration,
+				})
 			}(i, tc)
 		}
 		wg.Wait()
@@ -1302,13 +1322,21 @@ func (al *AgentLoop) runLLMIteration(
 // The returned (candidates, model) pair is used for all LLM calls within one
 // turn — tool follow-up iterations use the same tier as the initial call so
 // that a multi-step tool chain doesn't switch models mid-way.
+// routedModel holds the resolved model tier for a conversation turn,
+// including per-model ThinkingLevel from model_list config.
+type routedModel struct {
+	Candidates    []providers.FallbackCandidate
+	Model         string
+	ThinkingLevel ThinkingLevel
+}
+
 func (al *AgentLoop) selectCandidates(
 	agent *AgentInstance,
 	userMsg string,
 	history []providers.Message,
-) (candidates []providers.FallbackCandidate, model string) {
+) routedModel {
 	if agent.Router == nil || len(agent.LightCandidates) == 0 {
-		return agent.Candidates, agent.Model
+		return routedModel{agent.Candidates, agent.Model, agent.ThinkingLevel}
 	}
 
 	_, usedLight, score := agent.Router.SelectModel(userMsg, history, agent.Model)
@@ -1319,17 +1347,18 @@ func (al *AgentLoop) selectCandidates(
 				"score":     score,
 				"threshold": agent.Router.Threshold(),
 			})
-		return agent.Candidates, agent.Model
+		return routedModel{agent.Candidates, agent.Model, agent.ThinkingLevel}
 	}
 
 	logger.InfoCF("agent", "Model routing: light model selected",
 		map[string]any{
-			"agent_id":    agent.ID,
-			"light_model": agent.Router.LightModel(),
-			"score":       score,
-			"threshold":   agent.Router.Threshold(),
+			"agent_id":       agent.ID,
+			"light_model":    agent.Router.LightModel(),
+			"score":          score,
+			"threshold":      agent.Router.Threshold(),
+			"thinking_level": string(agent.LightThinkingLevel),
 		})
-	return agent.LightCandidates, agent.Router.LightModel()
+	return routedModel{agent.LightCandidates, agent.Router.LightModel(), agent.LightThinkingLevel}
 }
 
 // maybeSummarize triggers summarization if the session history exceeds thresholds.

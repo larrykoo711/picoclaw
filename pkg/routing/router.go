@@ -41,9 +41,9 @@ func New(cfg RouterConfig) *Router {
 	}
 }
 
-// newWithClassifier creates a Router with a custom Classifier.
+// NewWithClassifier creates a Router with a custom Classifier.
 // Intended for unit tests that need to inject a deterministic scorer.
-func newWithClassifier(cfg RouterConfig, c Classifier) *Router {
+func NewWithClassifier(cfg RouterConfig, c Classifier) *Router {
 	if cfg.Threshold <= 0 {
 		cfg.Threshold = defaultThreshold
 	}
