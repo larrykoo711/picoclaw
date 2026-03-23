@@ -191,8 +191,12 @@ func buildParams(
 					blocks = append(blocks, anthropic.NewTextBlock(msg.Content))
 				}
 				for _, tc := range msg.ToolCalls {
-					input := resolveToolInput(tc)
 					name := resolveToolName(tc)
+					// Skip tool calls with empty names to avoid API errors
+					if name == "" {
+						continue
+					}
+					input := resolveToolInput(tc)
 					blocks = append(blocks, anthropic.NewToolUseBlock(tc.ID, input, name))
 				}
 				anthropicMessages = append(anthropicMessages, anthropic.NewAssistantMessage(blocks...))

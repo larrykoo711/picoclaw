@@ -27,7 +27,7 @@ func streamLLMCall(
 	callback StreamCallback,
 ) (*providers.LLMResponse, error) {
 	// Try streaming if provider supports it
-	sp, ok := provider.(providers.StreamingProvider)
+	sp, ok := provider.(providers.HalclawStreamingProvider)
 	if !ok {
 		// Fallback to non-streaming
 		return provider.Chat(ctx, messages, tools, model, options)

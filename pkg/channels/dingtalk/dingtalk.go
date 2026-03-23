@@ -10,6 +10,7 @@ import (
 
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/chatbot"
 	"github.com/open-dingtalk/dingtalk-stream-sdk-go/client"
+	dinglog "github.com/open-dingtalk/dingtalk-stream-sdk-go/logger"
 
 	"github.com/sipeed/picoclaw/pkg/bus"
 	"github.com/sipeed/picoclaw/pkg/channels"
@@ -35,9 +36,12 @@ type DingTalkChannel struct {
 
 // NewDingTalkChannel creates a new DingTalk channel instance
 func NewDingTalkChannel(cfg config.DingTalkConfig, messageBus *bus.MessageBus) (*DingTalkChannel, error) {
-	if cfg.ClientID == "" || cfg.ClientSecret == "" {
+	if cfg.ClientID == "" || cfg.ClientSecret() == "" {
 		return nil, fmt.Errorf("dingtalk client_id and client_secret are required")
 	}
+
+	// Set the logger for the Stream SDK
+	dinglog.SetLogger(logger.NewLogger("dingtalk"))
 
 	base := channels.NewBaseChannel("dingtalk", cfg, messageBus, cfg.AllowFrom,
 		channels.WithMaxMessageLength(20000),
@@ -49,7 +53,7 @@ func NewDingTalkChannel(cfg config.DingTalkConfig, messageBus *bus.MessageBus) (
 		BaseChannel:  base,
 		config:       cfg,
 		clientID:     cfg.ClientID,
-		clientSecret: cfg.ClientSecret,
+		clientSecret: cfg.ClientSecret(),
 	}, nil
 }
 

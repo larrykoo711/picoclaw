@@ -7,7 +7,7 @@ import (
 	"github.com/sipeed/picoclaw/pkg/providers"
 )
 
-// mockStreamingProvider implements both LLMProvider and StreamingProvider.
+// mockStreamingProvider implements both LLMProvider and HalclawStreamingProvider.
 type mockStreamingProvider struct {
 	events []providers.StreamEvent
 }

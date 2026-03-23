@@ -37,13 +37,13 @@ type slackMessageRef struct {
 }
 
 func NewSlackChannel(cfg config.SlackConfig, messageBus *bus.MessageBus) (*SlackChannel, error) {
-	if cfg.BotToken == "" || cfg.AppToken == "" {
+	if cfg.BotToken() == "" || cfg.AppToken() == "" {
 		return nil, fmt.Errorf("slack bot_token and app_token are required")
 	}
 
 	api := slack.New(
-		cfg.BotToken,
-		slack.OptionAppLevelToken(cfg.AppToken),
+		cfg.BotToken(),
+		slack.OptionAppLevelToken(cfg.AppToken()),
 	)
 
 	socketClient := socketmode.New(api)
@@ -122,7 +122,11 @@ func (c *SlackChannel) Send(ctx context.Context, msg bus.OutboundMessage) error 
 		slack.MsgOptionText(msg.Content, false),
 	}
 
-	if threadTS != "" {
+	if msg.ReplyToMessageID != "" && threadTS == "" {
+		// Answer to the message by creating a Thread under it
+		opts = append(opts, slack.MsgOptionTS(msg.ReplyToMessageID))
+	} else if threadTS != "" {
+		// If we are already in a thread, continue in the thread
 		opts = append(opts, slack.MsgOptionTS(threadTS))
 	}
 
@@ -323,8 +327,9 @@ func (c *SlackChannel) handleMessageEvent(ev *slackevents.MessageEvent) {
 	storeMedia := func(localPath, filename string) string {
 		if store := c.GetMediaStore(); store != nil {
 			ref, err := store.Store(localPath, media.MediaMeta{
-				Filename: filename,
-				Source:   "slack",
+				Filename:      filename,
+				Source:        "slack",
+				CleanupPolicy: media.CleanupPolicyDeleteOnCleanup,
 			}, scope)
 			if err == nil {
 				return ref
@@ -511,7 +516,7 @@ func (c *SlackChannel) downloadSlackFile(file slack.File) string {
 	return utils.DownloadFile(downloadURL, file.Name, utils.DownloadOptions{
 		LoggerPrefix: "slack",
 		ExtraHeaders: map[string]string{
-			"Authorization": "Bearer " + c.config.BotToken,
+			"Authorization": "Bearer " + c.config.BotToken(),
 		},
 	})
 }

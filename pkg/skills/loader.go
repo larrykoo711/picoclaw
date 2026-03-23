@@ -10,15 +10,15 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/gomarkdown/markdown"
+	"github.com/gomarkdown/markdown/ast"
+	"github.com/gomarkdown/markdown/parser"
+	"gopkg.in/yaml.v3"
+
 	"github.com/sipeed/picoclaw/pkg/logger"
 )
 
-var (
-	namePattern        = regexp.MustCompile(`^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*$`)
-	reFrontmatter      = regexp.MustCompile(`(?s)^---(?:\r\n|\n|\r)(.*?)(?:\r\n|\n|\r)---`)
-	reStripFrontmatter = regexp.MustCompile(`(?s)^---(?:\r\n|\n|\r)(.*?)(?:\r\n|\n|\r)---(?:\r\n|\n|\r)*`)
-	reTrailingComma    = regexp.MustCompile(`,\s*([}\]])`)
-)
+var namePattern = regexp.MustCompile(`^[a-zA-Z0-9]+(-[a-zA-Z0-9]+)*$`)
 
 const (
 	MaxNameLength        = 64
@@ -253,119 +253,153 @@ func (sl *SkillsLoader) getSkillMetadata(skillPath string) *SkillMetadata {
 		return nil
 	}
 
-	frontmatter := sl.extractFrontmatter(string(content))
+	frontmatter, bodyContent := splitFrontmatter(string(content))
+	dirName := filepath.Base(filepath.Dir(skillPath))
+	title, bodyDescription := extractMarkdownMetadata(bodyContent)
+
+	metadata := &SkillMetadata{
+		Name:        dirName,
+		Description: bodyDescription,
+	}
+	if title != "" && namePattern.MatchString(title) && len(title) <= MaxNameLength {
+		metadata.Name = title
+	}
+
 	if frontmatter == "" {
-		return &SkillMetadata{
-			Name: filepath.Base(filepath.Dir(skillPath)),
-		}
+		return metadata
 	}
 
 	// Try JSON first — supports all fields including requires/install.
 	var jsonMeta SkillMetadata
 	if err := json.Unmarshal([]byte(frontmatter), &jsonMeta); err == nil {
-		return &jsonMeta
+		if jsonMeta.Name != "" {
+			metadata.Name = jsonMeta.Name
+		}
+		if jsonMeta.Description != "" {
+			metadata.Description = jsonMeta.Description
+		}
+		return metadata
 	}
 
 	// Fall back to simple YAML parsing for top-level fields,
 	// then extract nested metadata.openclaw for emoji/requires/install.
 	yamlMeta := sl.parseSimpleYAML(frontmatter)
-	meta := &SkillMetadata{
-		Name:        yamlMeta["name"],
-		Description: yamlMeta["description"],
-		Homepage:    yamlMeta["homepage"],
-		Emoji:       yamlMeta["emoji"],
+	if name := yamlMeta["name"]; name != "" {
+		metadata.Name = name
 	}
-	sl.mergeOpenClawMetadata(frontmatter, meta)
-	return meta
+	if description := yamlMeta["description"]; description != "" {
+		metadata.Description = description
+	}
+	return metadata
 }
 
-// mergeOpenClawMetadata extracts the "metadata: { "openclaw": { ... } }" block
-// from YAML frontmatter and merges emoji/requires/install into meta.
-// Handles trailing commas in the JSON block (common in SKILL.md files).
-func (sl *SkillsLoader) mergeOpenClawMetadata(frontmatter string, meta *SkillMetadata) {
-	idx := strings.Index(frontmatter, "metadata:")
-	if idx < 0 {
-		return
+func extractMarkdownMetadata(content string) (title, description string) {
+	p := parser.NewWithExtensions(parser.CommonExtensions)
+	doc := markdown.Parse([]byte(content), p)
+	if doc == nil {
+		return "", ""
 	}
 
-	rest := strings.TrimSpace(frontmatter[idx+len("metadata:"):])
-	if rest == "" || rest[0] != '{' {
-		return
-	}
+	ast.WalkFunc(doc, func(node ast.Node, entering bool) ast.WalkStatus {
+		if !entering {
+			return ast.GoToNext
+		}
 
-	// Strip trailing commas (,} → }, ,] → ]) to produce valid JSON.
-	cleaned := reTrailingComma.ReplaceAllString(rest, "$1")
+		switch n := node.(type) {
+		case *ast.Heading:
+			if title == "" && n.Level == 1 {
+				title = nodeText(n)
+				if title != "" && description != "" {
+					return ast.Terminate
+				}
+			}
+		case *ast.Paragraph:
+			if description == "" {
+				description = nodeText(n)
+				if title != "" && description != "" {
+					return ast.Terminate
+				}
+			}
+		}
+		return ast.GoToNext
+	})
 
-	var wrapper map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(cleaned), &wrapper); err != nil {
-		return
-	}
-
-	oc, ok := wrapper["openclaw"]
-	if !ok {
-		return
-	}
-
-	var ocData struct {
-		Emoji    string          `json:"emoji"`
-		Requires *SkillRequires  `json:"requires"`
-		Install  []InstallAction `json:"install"`
-	}
-	if err := json.Unmarshal(oc, &ocData); err != nil {
-		return
-	}
-
-	if ocData.Emoji != "" {
-		meta.Emoji = ocData.Emoji
-	}
-	if ocData.Requires != nil {
-		meta.Requires = ocData.Requires
-	}
-	if ocData.Install != nil {
-		meta.Install = ocData.Install
-	}
+	return title, description
 }
 
-// parseSimpleYAML parses simple key: value YAML format
-// Example: name: github\n description: "..."
-// Normalizes line endings to handle \n (Unix), \r\n (Windows), and \r (classic Mac)
+func nodeText(n ast.Node) string {
+	var b strings.Builder
+	ast.WalkFunc(n, func(node ast.Node, entering bool) ast.WalkStatus {
+		if !entering {
+			return ast.GoToNext
+		}
+
+		switch t := node.(type) {
+		case *ast.Text:
+			b.Write(t.Literal)
+		case *ast.Code:
+			b.Write(t.Literal)
+		case *ast.Softbreak, *ast.Hardbreak, *ast.NonBlockingSpace:
+			b.WriteByte(' ')
+		}
+		return ast.GoToNext
+	})
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+// parseSimpleYAML parses YAML frontmatter and extracts known metadata fields.
 func (sl *SkillsLoader) parseSimpleYAML(content string) map[string]string {
 	result := make(map[string]string)
 
-	// Normalize line endings: convert \r\n and \r to \n
-	normalized := strings.ReplaceAll(content, "\r\n", "\n")
-	normalized = strings.ReplaceAll(normalized, "\r", "\n")
-
-	for line := range strings.SplitSeq(normalized, "\n") {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) == 2 {
-			key := strings.TrimSpace(parts[0])
-			value := strings.TrimSpace(parts[1])
-			// Remove quotes if present
-			value = strings.Trim(value, "\"'")
-			result[key] = value
-		}
+	var meta struct {
+		Name        string `yaml:"name"`
+		Description string `yaml:"description"`
+	}
+	if err := yaml.Unmarshal([]byte(content), &meta); err != nil {
+		return result
+	}
+	if meta.Name != "" {
+		result["name"] = meta.Name
+	}
+	if meta.Description != "" {
+		result["description"] = meta.Description
 	}
 
 	return result
 }
 
 func (sl *SkillsLoader) extractFrontmatter(content string) string {
-	// Support \n (Unix), \r\n (Windows), and \r (classic Mac) line endings for frontmatter blocks
-	match := reFrontmatter.FindStringSubmatch(content)
-	if len(match) > 1 {
-		return match[1]
-	}
-	return ""
+	frontmatter, _ := splitFrontmatter(content)
+	return frontmatter
 }
 
 func (sl *SkillsLoader) stripFrontmatter(content string) string {
-	return reStripFrontmatter.ReplaceAllString(content, "")
+	_, body := splitFrontmatter(content)
+	return body
+}
+
+func splitFrontmatter(content string) (frontmatter, body string) {
+	normalized := string(parser.NormalizeNewlines([]byte(content)))
+	lines := strings.Split(normalized, "\n")
+	if len(lines) == 0 || lines[0] != "---" {
+		return "", content
+	}
+
+	end := -1
+	for i := 1; i < len(lines); i++ {
+		if lines[i] == "---" {
+			end = i
+			break
+		}
+	}
+	if end == -1 {
+		return "", content
+	}
+
+	frontmatter = strings.Join(lines[1:end], "\n")
+	body = strings.Join(lines[end+1:], "\n")
+	body = strings.TrimLeft(body, "\n")
+	return frontmatter, body
 }
 
 func escapeXML(s string) string {

@@ -36,11 +36,15 @@ func (al *AgentLoop) SetDisabledSkills(names []string) {
 // activeSessionManager returns the session manager from the running agent
 // (which always reflects the latest in-memory state), falling back to
 // a disk-loaded session manager when no agent is running.
+// Note: agent.Sessions is a SessionStore interface; we need the concrete
+// *SessionManager for ListSessions/Delete which are not on the interface.
 func (al *AgentLoop) activeSessionManager() *session.SessionManager {
 	// Prefer the live agent's session manager — it has the real-time state
 	// that AddMessage/Save keep up to date during message processing.
 	if agent := al.registry.GetDefaultAgent(); agent != nil && agent.Sessions != nil {
-		return agent.Sessions
+		if sm, ok := agent.Sessions.(*session.SessionManager); ok {
+			return sm
+		}
 	}
 	// Fallback: lazily load from disk (engine starting or no agents registered).
 	al.sessionMgrOnce.Do(func() {
