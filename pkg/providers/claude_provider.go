@@ -41,6 +41,10 @@ func newClaudeProviderWithDelegate(delegate *anthropicprovider.Provider) *Claude
 	return &ClaudeProvider{delegate: delegate}
 }
 
+// SetPassthroughModel forwards passthrough_model to the underlying anthropic provider.
+// When true, model IDs are passed as-is (no dots→hyphens normalization).
+func (p *ClaudeProvider) SetPassthroughModel(v bool) { p.delegate.SetPassthroughModel(v) }
+
 func (p *ClaudeProvider) Chat(
 	ctx context.Context, messages []Message, tools []ToolDefinition, model string, options map[string]any,
 ) (*LLMResponse, error) {

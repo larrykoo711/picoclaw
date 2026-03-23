@@ -122,7 +122,16 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 
 	case "anthropic":
 		if cfg.AuthMethod == "oauth" || cfg.AuthMethod == "token" {
-			// Use OAuth credentials from auth store
+			// If api_key is provided directly, use it as a static OAuth token
+			// (no auth store needed). This supports HalClaw-style configs where
+			// the OAuth token lives in the model_list api_key field.
+			if cfg.APIKey != "" {
+				tokenSource := func() (string, error) { return cfg.APIKey, nil }
+				p := NewClaudeProviderWithTokenSourceAndBaseURL(cfg.APIKey, tokenSource, cfg.APIBase)
+				p.SetPassthroughModel(cfg.PassthroughModel)
+				return p, modelID, nil
+			}
+			// Fall back to auth store credentials (picoclaw CLI flow)
 			provider, err := createClaudeAuthProvider()
 			if err != nil {
 				return nil, "", err
@@ -134,7 +143,9 @@ func CreateProviderFromConfig(cfg *config.ModelConfig) (LLMProvider, string, err
 			return nil, "", fmt.Errorf("api_key is required for anthropic protocol (model: %s)", cfg.Model)
 		}
 		apiBase := cfg.APIBase // e.g. "https://api.ofox.ai/anthropic"
-		return NewClaudeProviderWithBaseURL(cfg.APIKey, apiBase), modelID, nil
+		p := NewClaudeProviderWithBaseURL(cfg.APIKey, apiBase)
+		p.SetPassthroughModel(cfg.PassthroughModel)
+		return p, modelID, nil
 
 	case "antigravity":
 		return NewAntigravityProvider(), modelID, nil

@@ -33,10 +33,16 @@ func (al *AgentLoop) SetDisabledSkills(names []string) {
 	}
 }
 
-// defaultSessionManager returns a lazily-initialized SessionManager for the
-// default agent's workspace. This allows session operations (list, delete, etc.)
-// outside of an active agent loop iteration.
-func (al *AgentLoop) defaultSessionManager() *session.SessionManager {
+// activeSessionManager returns the session manager from the running agent
+// (which always reflects the latest in-memory state), falling back to
+// a disk-loaded session manager when no agent is running.
+func (al *AgentLoop) activeSessionManager() *session.SessionManager {
+	// Prefer the live agent's session manager — it has the real-time state
+	// that AddMessage/Save keep up to date during message processing.
+	if agent := al.registry.GetDefaultAgent(); agent != nil && agent.Sessions != nil {
+		return agent.Sessions
+	}
+	// Fallback: lazily load from disk (engine starting or no agents registered).
 	al.sessionMgrOnce.Do(func() {
 		workspace := al.cfg.Agents.Defaults.Workspace
 		if workspace == "" {
@@ -51,7 +57,7 @@ func (al *AgentLoop) defaultSessionManager() *session.SessionManager {
 
 // ListSessions returns summaries of all saved sessions.
 func (al *AgentLoop) ListSessions() []session.SessionInfo {
-	sm := al.defaultSessionManager()
+	sm := al.activeSessionManager()
 	if sm == nil {
 		return nil
 	}
@@ -60,7 +66,7 @@ func (al *AgentLoop) ListSessions() []session.SessionInfo {
 
 // DeleteSession removes a session by key from both memory and disk.
 func (al *AgentLoop) DeleteSession(key string) error {
-	sm := al.defaultSessionManager()
+	sm := al.activeSessionManager()
 	if sm == nil {
 		return fmt.Errorf("session manager not available")
 	}
@@ -69,7 +75,7 @@ func (al *AgentLoop) DeleteSession(key string) error {
 
 // GetHistory returns the message history for a session.
 func (al *AgentLoop) GetHistory(key string) []providers.Message {
-	sm := al.defaultSessionManager()
+	sm := al.activeSessionManager()
 	if sm == nil {
 		return nil
 	}
@@ -80,7 +86,7 @@ func (al *AgentLoop) GetHistory(key string) []providers.Message {
 // keepUserCount user messages and their corresponding assistant/tool responses.
 // keepUserCount=0 clears all history.
 func (al *AgentLoop) TruncateSessionHistory(key string, keepUserCount int) {
-	sm := al.defaultSessionManager()
+	sm := al.activeSessionManager()
 	if sm == nil {
 		return
 	}
@@ -114,7 +120,7 @@ func (al *AgentLoop) TruncateSessionHistory(key string, keepUserCount int) {
 // ForceSavePartialSession appends partial content as an assistant message
 // and saves the session. Used during app shutdown when a stream is in progress.
 func (al *AgentLoop) ForceSavePartialSession(sessionKey, partialContent string) error {
-	sm := al.defaultSessionManager()
+	sm := al.activeSessionManager()
 	if sm == nil {
 		return fmt.Errorf("session manager not available")
 	}
@@ -128,7 +134,7 @@ func (al *AgentLoop) ForceSavePartialSession(sessionKey, partialContent string) 
 // EstimateSessionTokens returns a fast local heuristic token estimate
 // for the session's message history. Never makes a network request.
 func (al *AgentLoop) EstimateSessionTokens(sessionKey string) int {
-	sm := al.defaultSessionManager()
+	sm := al.activeSessionManager()
 	if sm == nil {
 		return 0
 	}
@@ -139,7 +145,7 @@ func (al *AgentLoop) EstimateSessionTokens(sessionKey string) int {
 // CountSessionTokens calls the provider's token counting API for the session.
 // Falls back to local estimation if the provider does not support token counting.
 func (al *AgentLoop) CountSessionTokens(ctx context.Context, sessionKey string) (int, error) {
-	sm := al.defaultSessionManager()
+	sm := al.activeSessionManager()
 	if sm == nil {
 		return 0, fmt.Errorf("session manager not available")
 	}

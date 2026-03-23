@@ -769,8 +769,9 @@ func (al *AgentLoop) runAgentLoop(
 	maxMediaSize := al.cfg.Agents.Defaults.GetMaxMediaSize()
 	messages = resolveMediaRefs(messages, al.mediaStore, maxMediaSize)
 
-	// 2. Save user message to session
+	// 2. Save user message to session (persist immediately so page refresh won't lose it)
 	agent.Sessions.AddMessage(opts.SessionKey, "user", opts.UserMessage)
+	agent.Sessions.Save(opts.SessionKey)
 
 	// 3. Run LLM iteration loop
 	finalContent, iteration, err := al.runLLMIteration(ctx, agent, messages, opts)

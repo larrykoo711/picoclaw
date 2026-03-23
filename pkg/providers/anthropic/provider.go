@@ -29,10 +29,15 @@ const (
 )
 
 type Provider struct {
-	client      *anthropic.Client
-	tokenSource func() (string, error)
-	baseURL     string
+	client           *anthropic.Client
+	tokenSource      func() (string, error)
+	baseURL          string
+	passthroughModel bool
 }
+
+// SetPassthroughModel controls whether model IDs are passed as-is (true)
+// or normalized with dots→hyphens for the direct Anthropic API (false).
+func (p *Provider) SetPassthroughModel(v bool) { p.passthroughModel = v }
 
 // SupportsThinking implements providers.ThinkingCapable.
 func (p *Provider) SupportsThinking() bool { return true }
@@ -87,6 +92,12 @@ func (p *Provider) Chat(
 			option.WithAuthToken(tok),
 			option.WithHeader("anthropic-beta", anthropicBetaHeader),
 		)
+	}
+
+	// passthrough=false: normalize dots→hyphens for direct Anthropic API
+	// (claude-sonnet-4.6 → claude-sonnet-4-6). Gateways pass model as-is.
+	if !p.passthroughModel {
+		model = strings.ReplaceAll(model, ".", "-")
 	}
 
 	params, err := buildParams(messages, tools, model, options)
@@ -202,12 +213,8 @@ func buildParams(
 		maxTokens = int64(mt)
 	}
 
-	// Normalize model ID: Anthropic API uses hyphens (claude-sonnet-4-6),
-	// but config may use dots (claude-sonnet-4.6).
-	apiModel := strings.ReplaceAll(model, ".", "-")
-
 	params := anthropic.MessageNewParams{
-		Model:     anthropic.Model(apiModel),
+		Model:     anthropic.Model(model),
 		Messages:  anthropicMessages,
 		MaxTokens: maxTokens,
 	}

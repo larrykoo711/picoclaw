@@ -32,10 +32,10 @@ func (al *AgentLoop) ProcessDirectStream(
 
 	reply, err := al.ProcessDirect(ctx, content, sessionKey)
 	if err != nil {
-		callback(StreamChatEvent{
-			Type:    "error",
-			Content: err.Error(),
-		})
+		// Error is returned to the caller (app.go goroutine) which emits
+		// chat:error. Do NOT also fire the callback here — that would cause
+		// a double-emit (chat:limit + chat:error) where the first deletes
+		// sessionMeta, preventing the second from finding the assistant message.
 		return err
 	}
 

@@ -3,6 +3,7 @@ package anthropicprovider
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
 	"github.com/anthropics/anthropic-sdk-go/option"
@@ -27,6 +28,10 @@ func (p *Provider) ChatStream(
 			return nil, fmt.Errorf("refreshing token: %w", err)
 		}
 		opts = append(opts, option.WithAuthToken(tok))
+	}
+
+	if !p.passthroughModel {
+		model = strings.ReplaceAll(model, ".", "-")
 	}
 
 	params, err := buildParams(messages, tools, model, options)

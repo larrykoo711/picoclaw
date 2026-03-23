@@ -15,7 +15,8 @@ func TestBuildParams_BasicMessage(t *testing.T) {
 	messages := []Message{
 		{Role: "user", Content: "Hello"},
 	}
-	params, err := buildParams(messages, nil, "claude-sonnet-4.6", map[string]any{
+	// buildParams passes model as-is; dots→hyphens normalization moved to Chat()/ChatStream().
+	params, err := buildParams(messages, nil, "claude-sonnet-4-6", map[string]any{
 		"max_tokens": 1024,
 	})
 	if err != nil {
